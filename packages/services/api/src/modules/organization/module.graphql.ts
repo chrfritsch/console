@@ -258,6 +258,14 @@ export default gql`
     Whether the viewer can migrate the legacy member roles
     """
     viewerCanMigrateLegacyMemberRoles: Boolean!
+    """
+    The organization's audit logs. This field is only available to members with the Admin role.
+    """
+    viewerCanExportAuditLogs: Boolean!
+    """
+    The organization's audit logs. This field is only available to members with the Admin role.
+    """
+    auditLogs(filter: AuditLogFilter, pagination: AuditLogPaginationFilter): AuditLogConnection!
   }
 
   type OrganizationConnection {
