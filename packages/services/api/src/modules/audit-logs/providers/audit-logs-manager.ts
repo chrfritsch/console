@@ -115,22 +115,18 @@ export class AuditLogManager {
   }
 
   async exportAndSendEmail(
-    organizationSlug: string,
+    organizationId: string,
     filter: { startDate: Date; endDate: Date },
   ): Promise<{ ok: { url: string } | null } | { error?: { message: string } | null }> {
-    const isOwner = await this.auth.isOwnerOfOrganization({
-      organization: organizationSlug,
+    await this.session.assertPerformAction({
+      action: 'auditLog:export',
+      organizationId,
+      params: {
+        organizationId,
+      },
     });
-    if (!isOwner) {
-      return {
-        error: {
-          message: 'Unauthorized: You are not authorized to perform this action',
-        },
-        ok: null,
-      };
-    }
 
-    const getAllAuditLogs = await this.getPaginatedAuditLogs(organizationSlug, undefined, {
+    const getAllAuditLogs = await this.getPaginatedAuditLogs(organizationId, undefined, {
       startDate: filter.startDate,
       endDate: filter.endDate,
     });
@@ -175,7 +171,7 @@ export class AuditLogManager {
       const cleanStartDate = filter.startDate.toISOString().split('T')[0];
       const cleanEndDate = filter.endDate.toISOString().split('T')[0];
       const unixTimestampInSeconds = Math.floor(Date.now() / 1000);
-      const key = `audit-logs/${organizationSlug}/${unixTimestampInSeconds}-${cleanStartDate}-${cleanEndDate}.csv`;
+      const key = `audit-logs/${organizationId}/${unixTimestampInSeconds}-${cleanStartDate}-${cleanEndDate}.csv`;
       const uploadResult = await client.fetch([endpoint, bucket, key].join('/'), {
         method: 'PUT',
         headers: {
@@ -188,7 +184,7 @@ export class AuditLogManager {
         this.logger.error(`Failed to upload the file: ${uploadResult.url}`);
         captureException('Audit log: Failed to upload the file', {
           extra: {
-            organizationSlug,
+            organizationId,
             filter,
           },
         });
@@ -211,7 +207,7 @@ export class AuditLogManager {
         this.logger.error(`Failed to get the pre-signed URL: ${getPresignedUrl.url}`);
         captureException('Audit log: Failed to get the pre-signed URL', {
           extra: {
-            organizationSlug,
+            organizationId,
             filter,
           },
         });
@@ -224,7 +220,7 @@ export class AuditLogManager {
       }
 
       const organization = await this.storage.getOrganization({
-        organizationId: organizationSlug,
+        organizationId,
       });
       const orgName = organization?.name;
       await this.emailProvider.schedule({
@@ -260,7 +256,7 @@ export class AuditLogManager {
       this.logger.error(`Failed to export and send audit logs: ${error}`);
       captureException(error, {
         extra: {
-          organizationSlug,
+          organizationId,
           filter,
         },
       });
