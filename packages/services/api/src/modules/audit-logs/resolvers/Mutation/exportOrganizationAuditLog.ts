@@ -19,12 +19,11 @@ export const exportOrganizationAuditLog: NonNullable<
       },
       ok: null,
     };
-  } else {
-    return {
-      error: null,
-      ok: {
-        url: result.ok.url,
-      },
-    };
   }
+  return {
+    error: null,
+    ok: {
+      url: result.ok.url,
+    },
+  };
 };
