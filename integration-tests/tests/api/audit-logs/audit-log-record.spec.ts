@@ -1,3 +1,4 @@
+import { endOfDay, startOfDay } from 'date-fns';
 import { waitFor } from 'testkit/flow';
 import { graphql } from 'testkit/gql';
 import { ProjectType } from 'testkit/gql/graphql';
@@ -121,36 +122,35 @@ const ExportAllAuditLogs = graphql(`
   }
 `);
 
+const today = endOfDay(new Date());
+const lastYear = startOfDay(new Date(new Date().setFullYear(new Date().getFullYear() - 1)));
+
 test.concurrent(
-  'Try to export Audit Logs from an Organization with unauthorized user',
+  'Try to export Audit Logs from an Organization with unauthorized user - should throw error',
   async () => {
     await waitFor(5000);
     const { createOrg } = await initSeed().createOwner();
     await waitFor(5000);
-    const firstOrg = await createOrg();
+    const { createProject, organization } = await createOrg();
     await waitFor(5000);
+    await createProject(ProjectType.Single);
+    await waitFor(4000);
     const secondOrg = await initSeed().createOwner();
     const secondToken = secondOrg.ownerToken;
 
-    const exportAuditLogs = await execute({
+    await execute({
       document: ExportAllAuditLogs,
       variables: {
         selector: {
-          organizationSlug: firstOrg.organization.id,
+          organizationSlug: organization.id,
         },
         filter: {
-          startDate: '1960-12-31T22:00:00.000Z',
-          endDate: '2023-12-31T22:00:00.000Z',
+          startDate: lastYear.toISOString(),
+          endDate: today.toISOString(),
         },
       },
       token: secondToken,
-    });
-
-    expect(exportAuditLogs.rawBody.data?.exportOrganizationAuditLog.ok).toBeNull();
-    expect(exportAuditLogs.rawBody.data?.exportOrganizationAuditLog.error).toBeDefined();
-    expect(exportAuditLogs.rawBody.data?.exportOrganizationAuditLog.error?.message).toBe(
-      'Unauthorized: You are not authorized to perform this action',
-    );
+    }).then(r => r.expectGraphQLErrors());
   },
 );
 
@@ -170,8 +170,8 @@ test.concurrent('Try to export Audit Logs from an Organization with authorized u
         organizationSlug: organization.id,
       },
       filter: {
-        startDate: '1960-12-31T22:00:00.000Z',
-        endDate: '2023-12-31T22:00:00.000Z',
+        startDate: lastYear.toISOString(),
+        endDate: today.toISOString(),
       },
     },
     token: ownerToken,

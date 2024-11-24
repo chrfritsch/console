@@ -12,12 +12,19 @@ export const exportOrganizationAuditLog: NonNullable<
     startDate: arg.filter.startDate,
   });
 
-  if ('error' in result) {
+  if (result.error || !result.ok) {
     return {
-      error: result.error,
+      error: {
+        message: result?.error?.message || 'Failed to export audit logs',
+      },
       ok: null,
     };
+  } else {
+    return {
+      error: null,
+      ok: {
+        url: result.ok.url,
+      },
+    };
   }
-
-  return result;
 };

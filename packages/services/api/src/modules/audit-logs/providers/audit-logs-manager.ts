@@ -117,7 +117,14 @@ export class AuditLogManager {
   async exportAndSendEmail(
     organizationId: string,
     filter: { startDate: Date; endDate: Date },
-  ): Promise<{ ok: { url: string } | null } | { error?: { message: string } | null }> {
+  ): Promise<{
+    ok: {
+      url: string;
+    } | null;
+    error: {
+      message: string;
+    } | null;
+  }> {
     await this.session.assertPerformAction({
       action: 'auditLog:export',
       organizationId,
@@ -150,9 +157,9 @@ export class AuditLogManager {
             columns: {
               id: 'id',
               timestamp: 'created_at',
-              event_action: 'event_type',
-              user_id: 'user_id',
-              user_email: 'user_email',
+              eventAction: 'event_type',
+              userId: 'user_id',
+              userEmail: 'user_email',
               metadata: 'metadata',
             },
           },
@@ -189,10 +196,10 @@ export class AuditLogManager {
           },
         });
         return {
-          ok: null,
           error: {
             message: 'Failed to generate the audit logs CSV',
           },
+          ok: null,
         };
       }
 
@@ -212,17 +219,17 @@ export class AuditLogManager {
           },
         });
         return {
-          ok: null,
           error: {
             message: 'Failed to generate the audit logs CSV',
           },
+          ok: null,
         };
       }
 
       const organization = await this.storage.getOrganization({
         organizationId,
       });
-      const orgName = organization?.name;
+      const title = `Audit Logs for your organization ${organization.name} from ${cleanStartDate} to ${cleanEndDate}`;
       await this.emailProvider.schedule({
         email: email,
         subject: 'Hive - Audit Log Report',
@@ -234,7 +241,7 @@ export class AuditLogManager {
                     <mj-image width="150px" src="https://graphql-hive.com/logo.png"></mj-image>
                     <mj-divider border-color="#ca8a04"></mj-divider>
                     <mj-text>
-                      Audit Logs for your organization <strong>${orgName}</strong> from ${cleanStartDate} to ${cleanEndDate}.
+                      ${title}
                     </mj-text>.
                     <mj-button href="${getPresignedUrl.url}" background-color="#ca8a04">
                       Download Audit Logs CSV
@@ -247,10 +254,10 @@ export class AuditLogManager {
       });
 
       return {
+        error: null,
         ok: {
           url: getPresignedUrl.url,
         },
-        error: null,
       };
     } catch (error) {
       this.logger.error(`Failed to export and send audit logs: ${error}`);
@@ -261,10 +268,10 @@ export class AuditLogManager {
         },
       });
       return {
-        ok: null,
         error: {
-          message: 'Failed to export and send audit logs',
+          message: 'Failed to generate the audit logs CSV',
         },
+        ok: null,
       };
     }
   }
