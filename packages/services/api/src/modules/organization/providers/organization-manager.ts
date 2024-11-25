@@ -346,16 +346,15 @@ export class OrganizationManager {
           },
           user,
         }),
+        this.auditLog.record({
+          eventType: 'ORGANIZATION_CREATED',
+          organizationId: result.organization.id,
+          metadata: {
+            organizationSlug: result.organization.id,
+          },
+        }),
       ]);
     }
-
-    await this.auditLog.record({
-      eventType: 'ORGANIZATION_CREATED',
-      organizationId: result.ok ? result.organization.id : slug,
-      metadata: {
-        organizationSlug: slug,
-      },
-    });
 
     return result;
   }
