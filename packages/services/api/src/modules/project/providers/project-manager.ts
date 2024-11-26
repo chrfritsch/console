@@ -78,19 +78,16 @@ export class ProjectManager {
             projectType: type,
           },
         }),
+        this.auditLog.record({
+          eventType: 'PROJECT_CREATED',
+          organizationId: organization,
+          metadata: {
+            projectId: result.project.id,
+            projectType: type,
+            projectSlug: slug,
+          },
+        }),
       ]);
-    }
-
-    if (result.ok && result.project) {
-      await this.auditLog.record({
-        eventType: 'PROJECT_CREATED',
-        organizationId: organization,
-        metadata: {
-          projectId: result.project.id,
-          projectType: type,
-          projectSlug: slug,
-        },
-      });
     }
 
     return result;

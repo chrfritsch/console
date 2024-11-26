@@ -1,10 +1,9 @@
 import { stringify } from 'csv-stringify';
 import { endOfDay, startOfDay } from 'date-fns';
 import { Inject, Injectable, Scope } from 'graphql-modules';
-import { decodeHashBasedCursor } from '@hive/storage';
+import { decodeCreatedAtAndUUIDIdBasedCursor } from '@hive/storage';
 import { captureException } from '@sentry/node';
 import { Session } from '../../auth/lib/authz';
-import { AuthManager } from '../../auth/providers/auth-manager';
 import { ClickHouse, sql } from '../../operations/providers/clickhouse-client';
 import { SqlValue } from '../../operations/providers/sql';
 import { Emails, mjml } from '../../shared/providers/emails';
@@ -29,7 +28,6 @@ export class AuditLogManager {
     @Inject(S3_CONFIG) private s3Config: S3Config,
     private emailProvider: Emails,
     private session: Session,
-    private auth: AuthManager,
     private storage: Storage,
   ) {
     this.logger = logger.child({ source: 'AuditLogManager' });
@@ -37,12 +35,8 @@ export class AuditLogManager {
 
   async getPaginatedAuditLogs(
     organizationId: string,
-    pagination?: {
-      cursorId?: string | null;
-      cursorTimestamp?: string | null;
-      first: number | null;
-    },
-    filter?: { startDate?: Date; endDate?: Date },
+    first?: number | null,
+    after?: string | null,
   ): Promise<{ data: AuditLogType[] }> {
     await this.session.assertPerformAction({
       action: 'auditLog:export',
@@ -53,35 +47,22 @@ export class AuditLogManager {
     });
 
     this.logger.info(
-      'Getting audit logs (organizationId=%s, filter=%o, pagination=%o)',
+      'Getting audit logs (organizationId: %s, first: %s, after: %s)',
       organizationId,
-      filter,
-      pagination,
+      first,
+      after,
     );
-    const newCursorId = pagination?.cursorId ? decodeHashBasedCursor(pagination?.cursorId) : null;
-    const lastYear = formatToClickhouseDateTime(
-      new Date(new Date().setFullYear(new Date().getFullYear() - 1)),
-    );
-    const limit = pagination?.first ?? null;
-    const cursorTimestamp = pagination?.cursorTimestamp
-      ? formatToClickhouseDateTime(new Date(pagination.cursorTimestamp))
-      : lastYear;
+    const limit = first ? (first > 0 ? Math.min(first, 25) : 25) : 25;
+    const cursor = after ? decodeCreatedAtAndUUIDIdBasedCursor(after) : null;
 
     const where: SqlValue[] = [];
     where.push(sql`organization_id = ${organizationId}`);
 
-    if (filter?.startDate && filter?.endDate) {
-      const from = formatToClickhouseDateTime(startOfDay(filter.startDate));
-      const to = formatToClickhouseDateTime(endOfDay(filter.endDate));
-      where.push(sql`timestamp >= ${from} AND timestamp <= ${to}`);
+    if (cursor?.createdAt) {
+      where.push(sql`timestamp >= ${cursor.createdAt}`);
     }
-
-    if (pagination?.cursorId && pagination?.cursorTimestamp) {
-      where.push(sql`id < ${String(newCursorId?.id)}`, sql`timestamp = ${cursorTimestamp}`);
-    } else if (pagination?.cursorId) {
-      where.push(sql`id < ${String(newCursorId?.id)}`);
-    } else if (pagination?.cursorTimestamp) {
-      where.push(sql`timestamp = ${cursorTimestamp}`);
+    if (cursor?.id) {
+      where.push(sql`id > ${cursor.id}`);
     }
 
     const whereClause = where.length > 0 ? sql`WHERE ${sql.join(where, ' AND ')}` : sql``;
@@ -99,6 +80,55 @@ export class AuditLogManager {
       ${whereClause}
       ORDER BY timestamp DESC, id DESC
       ${limit ? sql`LIMIT toInt64(${String(limit)})` : sql``}
+    `;
+
+    const result = await this.clickHouse.query({
+      query,
+      queryId: 'get-audit-logs',
+      timeout: 10000,
+    });
+
+    const data = AuditLogClickhouseArrayModel.parse(result.data);
+
+    return {
+      data,
+    };
+  }
+
+  async getAuditLogsByDateRange(
+    organizationId: string,
+    filter: { startDate: Date; endDate: Date },
+  ): Promise<{ data: AuditLogType[] }> {
+    await this.session.assertPerformAction({
+      action: 'auditLog:export',
+      organizationId,
+      params: {
+        organizationId,
+      },
+    });
+
+    this.logger.info('Getting audit logs (organizationId=%s, filter=%o)', organizationId, filter);
+    const where: SqlValue[] = [];
+    where.push(sql`organization_id = ${organizationId}`);
+
+    const from = formatToClickhouseDateTime(startOfDay(filter.startDate));
+    const to = formatToClickhouseDateTime(endOfDay(filter.endDate));
+    where.push(sql`timestamp >= ${from} AND timestamp <= ${to}`);
+
+    const whereClause = where.length > 0 ? sql`WHERE ${sql.join(where, ' AND ')}` : sql``;
+
+    const query = sql`
+      SELECT
+        id
+        , "timestamp"
+        , "organization_id" AS "organizationId"
+        , "event_action" AS "eventAction"
+        , "user_id" AS "userId"
+        , "user_email" AS "userEmail"
+        , "metadata"
+      FROM audit_logs
+      ${whereClause}
+      ORDER BY timestamp DESC, id DESC
     `;
 
     const result = await this.clickHouse.query({
@@ -133,10 +163,7 @@ export class AuditLogManager {
       },
     });
 
-    const getAllAuditLogs = await this.getPaginatedAuditLogs(organizationId, undefined, {
-      startDate: filter.startDate,
-      endDate: filter.endDate,
-    });
+    const getAllAuditLogs = await this.getAuditLogsByDateRange(organizationId, filter);
 
     if (!getAllAuditLogs || !getAllAuditLogs.data || getAllAuditLogs.data.length === 0) {
       return {

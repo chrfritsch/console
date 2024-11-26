@@ -22,11 +22,17 @@ export const typeDefs = gql`
     user: User
   }
 
+  extend type Organization {
+    """
+    The organization's audit logs. This field is only available to members with the Admin role.
+    """
+    auditLogs(first: Int, after: String): AuditLogConnection!
+  }
+
   extend type Mutation {
     exportOrganizationAuditLog(
       selector: OrganizationSelectorInput!
       filter: AuditLogFilter!
-      pagination: AuditLogPaginationFilter
     ): ExportOrganizationAuditLogResult!
   }
 
@@ -50,12 +56,6 @@ export const typeDefs = gql`
     hasPreviousPage: Boolean!
     startCursor: String
     endCursor: String
-  }
-
-  input AuditLogPaginationFilter {
-    first: Int
-    cursorId: String
-    cursorTimestamp: String
   }
 
   type ExportOrganizationAuditLogError implements Error {

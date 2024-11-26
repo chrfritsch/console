@@ -1,5 +1,4 @@
 import { endOfDay, startOfDay } from 'date-fns';
-import { waitFor } from 'testkit/flow';
 import { graphql } from 'testkit/gql';
 import { ProjectType } from 'testkit/gql/graphql';
 import { execute } from 'testkit/graphql';
@@ -36,11 +35,8 @@ const auditLogArray = graphql(`
 
 test.concurrent('Create multiple Audit Log Records for Organization', async ({ expect }) => {
   const { ownerToken, createOrg } = await initSeed().createOwner();
-  await waitFor(5000);
   const { organization, createProject } = await createOrg();
-  await waitFor(5000);
   await createProject(ProjectType.Single);
-  await waitFor(4000);
 
   const result = await execute({
     document: auditLogArray,
@@ -86,13 +82,9 @@ const GetAuditLogs = graphql(`
     }
   }
 `);
-
 test.concurrent('Create Audit Log Record for Organization', async ({ expect }) => {
-  await waitFor(5000);
   const { createOrg, ownerToken } = await initSeed().createOwner();
-  await waitFor(5000);
   const firstOrg = await createOrg();
-  waitFor(15000);
   const result = await execute({
     document: GetAuditLogs,
     variables: {
@@ -103,7 +95,6 @@ test.concurrent('Create Audit Log Record for Organization', async ({ expect }) =
     authToken: ownerToken,
   });
   const auditLogs = result.rawBody.data?.organization?.organization.auditLogs.edges;
-  waitFor(4000);
   expect(auditLogs?.[0].node.__typename === 'OrganizationCreatedAuditLog');
   expect(auditLogs?.[0].node.eventTime).toBeDefined();
 });
@@ -128,13 +119,9 @@ const lastYear = startOfDay(new Date(new Date().setFullYear(new Date().getFullYe
 test.concurrent(
   'Try to export Audit Logs from an Organization with unauthorized user - should throw error',
   async () => {
-    await waitFor(5000);
     const { createOrg } = await initSeed().createOwner();
-    await waitFor(5000);
     const { createProject, organization } = await createOrg();
-    await waitFor(5000);
     await createProject(ProjectType.Single);
-    await waitFor(4000);
     const secondOrg = await initSeed().createOwner();
     const secondToken = secondOrg.ownerToken;
 
@@ -155,13 +142,9 @@ test.concurrent(
 );
 
 test.concurrent('Try to export Audit Logs from an Organization with authorized user', async () => {
-  await waitFor(5000);
   const { createOrg, ownerToken } = await initSeed().createOwner();
-  await waitFor(5000);
   const { createProject, organization } = await createOrg();
-  await waitFor(5000);
   await createProject(ProjectType.Single);
-  await waitFor(4000);
 
   const exportAuditLogs = await execute({
     document: ExportAllAuditLogs,
@@ -195,5 +178,8 @@ test.concurrent('Try to export Audit Logs from an Organization with authorized u
   const header = rows?.[0].split(',');
   const expectedHeader = ['id', 'created_at', 'event_type', 'user_id', 'user_email', 'metadata'];
   expect(header).toEqual(expectedHeader);
-  expect(rows?.[1].split(',')[2]).toBe('TARGET_CREATED');
+  // Sometimes the order of the rows is not guaranteed, so we need to check if the expected rows are present
+  expect(rows?.find(row => row.includes('ORGANIZATION_CREATED'))).toBeDefined();
+  expect(rows?.find(row => row.includes('PROJECT_CREATED'))).toBeDefined();
+  expect(rows?.find(row => row.includes('TARGET_CREATED'))).toBeDefined();
 });
